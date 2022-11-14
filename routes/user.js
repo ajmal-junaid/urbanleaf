@@ -9,11 +9,18 @@ const serviceId = process.env.TWILIO_SERVICE_ID
 const client = require('twilio')(accountSid, authToken);
 var uuid = require('uuid');
 var paypal = require('paypal-rest-sdk');
+const adminHelpers = require('../helpers/admin-helpers');
+
+// <------------------------------------------PAYPAL CONFIGURE------------------------------------------->
+
 paypal.configure({
   'mode': 'sandbox', //sandbox or live 
   'client_id': 'AfJs549ebqbB9hzZNAfPtD8Oi7GYwmzbEhFcxnyxrMFF_6j3H-F_Y_1AIgsqnLFnIWQRtFvpMlZ1BcVM', // please provide your client id here 
   'client_secret': 'EHYmg-Hy7ojAvdGgNUR8tgjbSm6YlTUCI97BvwcIK-PaOMLdWklopX34anc7tJIPpKf9aYt7NWvj7Nwz' // provide your client secret here 
 });
+
+// <------------------------------------------VERIFY LOGIN------------------------------------------->
+
 const verifyLogin = (req, res, next) => {
   if (req.session.userLoggedIn == true) {
     next()
@@ -21,24 +28,27 @@ const verifyLogin = (req, res, next) => {
     res.redirect('/loginmail')
   }
 }
-/* GET home page. */
+
+// <------------------------------------------HOME-PAGE ------------------------------------------->
+
 router.get('/', async (req, res, next) => {
   let totalh = null
   let header = null
+  let banner = await adminHelpers.getBanner()
   if (req.session.user) {
     totalh = await userHelpers.getTotalAmount(req.session.user._id)
     header = await userHelpers.getHeaderDetails(req.session.user._id)
   }
-
   productHelpers.getAllCategories().then((category) => {
     productHelpers.getLatestProducts().then((product) => {
-      //let { user } = req.session.user
       let user = req.session.user
       const h = true;
-      res.render('user/home', { admin: false, user, category, product, h, totalh, header });
+      res.render('user/home', { admin: false, user, category, product, h, totalh, header, banner });
     })
   })
 });
+
+// <------------------------------------------GET LOGIN------------------------------------------->
 
 router.get('/login', (req, res, next) => {
   res.header("Cache-Control", "no-cache, private, no-store, must-revalidate, max-stale=0, post-check=0, pre-check=0");
@@ -52,6 +62,8 @@ router.get('/login', (req, res, next) => {
     req.session.userLoginErr = false
   }
 })
+
+// <------------------------------------------POST LOGIN------------------------------------------->
 
 router.post('/login', (req, res, next) => {
   userHelpers.doLogin(req.body).then((response) => {
@@ -75,6 +87,8 @@ router.post('/login', (req, res, next) => {
   })
 })
 
+// <------------------------------------------OTP VERIFICATION TWILLIO------------------------------------------->
+
 router.post('/verifyotp', (req, res) => {
   let mobileNumber = req.session.Phoneno
   let otp = req.body.otp
@@ -97,6 +111,8 @@ router.post('/verifyotp', (req, res) => {
     })
 })
 
+// <------------------------------------------GET LOGIN-THROUGH E-MAIL ------------------------------------------->
+
 router.get('/loginmail', (req, res) => {
   if (req.session.userLoggedIn) {
     res.redirect('/')
@@ -104,6 +120,8 @@ router.get('/loginmail', (req, res) => {
     res.render('user/loginmail', { layout: 'admin' })
   }
 })
+
+// <------------------------------------------ POST-LOGIN-WITH E-MAIL ------------------------------------------->
 
 router.post('/loginmail', (req, res) => {
   userHelpers.doLoginMail(req.body).then((response) => {
@@ -128,16 +146,22 @@ router.post('/loginmail', (req, res) => {
   })
 })
 
+// <------------------------------------------ GET-LOGOUT ------------------------------------------->
+
 router.get('/logout', (req, res) => {
   req.session.user = null
   req.session.userLoggedIn = false
   res.redirect('/')
 })
 
+// <------------------------------------------ GET SIGN-UP ------------------------------------------->
+
 router.get('/signup', (req, res) => {
   res.render('user/signup', { layout: 'admin', 'coupErr': req.session.couponErr })
   req.session.couponErr = null
 })
+
+// <------------------------------------------ POST SIGNUP ------------------------------------------->
 
 router.post('/signup', (req, res) => {
   if (req.body.terms) {
@@ -160,9 +184,13 @@ router.post('/signup', (req, res) => {
   }
 })
 
+// <------------------------------------------ GET FORGOT PASSWORD ------------------------------------------->
+
 router.get('/forgot', (req, res, next) => {
   res.render('user/forgot', { layout: 'admin' })
 })
+
+// <------------------------------------------ GET GET-PRODUCTS ------------------------------------------->
 
 router.get('/get-products', async (req, res, next) => {
   let user = req.session.user
@@ -180,11 +208,25 @@ router.get('/get-products', async (req, res, next) => {
       });
       let pageCount = await userHelpers.paginatorCount(count)
       product = await userHelpers.getTenProducts(req.query.id)
+      if (req.query.minimum) {
+        let minimum = req.query.minimum.slice(1)
+        let maximum = req.query.maximum.slice(1)
+        let arr = []
+        product = await productHelpers.getAllProducts()
+        product.forEach(product => {
+          if (product.OurPrice >= minimum && product.OurPrice <= maximum) {
+            arr.push(product)
+          }
+        });
+        product = arr
+      }
       res.render('user/list-products', { category, product, user, header, totalh, pageCount })
     })
   })
-
 })
+
+// <------------------------------------------ GET PRODUCT DETAILS ------------------------------------------->
+
 router.get('/product-details', async (req, res, next) => {
   let header = null
   let totalh = null
@@ -198,9 +240,13 @@ router.get('/product-details', async (req, res, next) => {
   res.render('user/product-details', { product, category, header, 'user': req.session.user, totalh, images })
 })
 
+// <------------------------------------------ GET PAGE-UNDER MAINTAINANCE ------------------------------------------->
+
 router.get('/mantain', (req, res) => {
   res.render('maintainance', { layout: 'admin' })
 })
+
+// <------------------------------------------ GET ADDTOCART ------------------------------------------->
 
 router.get('/add-to-cart/:id', verifyLogin, (req, res, next) => {
   let user = req.session.user
@@ -210,6 +256,8 @@ router.get('/add-to-cart/:id', verifyLogin, (req, res, next) => {
   })
 })
 
+// <------------------------------------------ POST ADDTOCART FROM WISHLIST------------------------------------------->
+
 router.get('/add-to-cartt/:id', verifyLogin, (req, res, next) => {
   let user = req.session.user
   userHelpers.addToCartt(req.params.id, user._id).then(() => {
@@ -217,12 +265,16 @@ router.get('/add-to-cartt/:id', verifyLogin, (req, res, next) => {
   })
 })
 
+// <------------------------------------------ GET ADDTOWISHLIST ------------------------------------------->
+
 router.get('/add-to-wishlist/:id', verifyLogin, (req, res, next) => {
   let user = req.session.user
   userHelpers.addToWishlist(req.params.id, user._id).then((response) => {
     res.json({ status: true, mod: response.modifiedCount })
   })
 })
+
+// <------------------------------------------ GET VIEW CART ------------------------------------------->
 
 router.get('/cart', async (req, res) => {
   req.session.discount = null
@@ -233,7 +285,6 @@ router.get('/cart', async (req, res) => {
   if (user) {
     userid = req.session.user._id
     header = await userHelpers.getHeaderDetails(req.session.user._id)
-
   }
   if (userid) {
     let products = await userHelpers.getCartProducts(userid)
@@ -245,6 +296,8 @@ router.get('/cart', async (req, res) => {
   }
 })
 
+// <------------------------------------------ POST INCREMENT OR DECREMENT QUANTITY (CART) ------------------------------------------->
+
 router.post('/change-product-quantity', (req, res, next) => {
   userHelpers.changeProductQuantity(req.body).then(async (response) => {
     response.total = await userHelpers.getTotalAmount(req.body.user)
@@ -253,17 +306,23 @@ router.post('/change-product-quantity', (req, res, next) => {
   })
 })
 
+// <------------------------------------------ POST REMOVE PRODUCT FROM CART------------------------------------------->
+
 router.post('/remove-product-cart', (req, res) => {
   userHelpers.removeCartProduct(req.body).then((response) => {
     res.json(response)
   })
 })
 
+// <------------------------------------------ POST REMOVE PRODUCT FROM WISHLIST------------------------------------------->
+
 router.post('/remove-wishlist-cart', (req, res) => {
   userHelpers.removeWishlistProduct(req.body).then((response) => {
     res.json(response)
   })
 })
+
+// <------------------------------------------ GET PROCEED TO CHECKOUT PAGE ------------------------------------------->
 
 router.get('/proceed-page', verifyLogin, async (req, res) => {
   let user = req.session.user
@@ -272,13 +331,16 @@ router.get('/proceed-page', verifyLogin, async (req, res) => {
   let header = await userHelpers.getHeaderDetails(req.session.user._id)
   let products = await userHelpers.getCartProducts(req.session.user._id)
   let address = await userHelpers.getAddresses(req.session.user._id)
+  let coupons = await userHelpers.getAllCoupons()
   let actual = discount + total
   if (req.session.discount) {
     discount = await discount + req.session.discount.discAmount
     total = await req.session.discount.totalPrice
   }
-  res.render('user/proceed', { total, user, header, address, products, discount, actual })
+  res.render('user/proceed', { total, user, header, address, products, discount, actual,coupons })
 })
+
+// <------------------------------------------ POST PROCEED TO CHECKOUT(PAYMENT METHODS,ADDRESS SELECTION)------------------------------------------->
 
 router.post('/proceed-page', async (req, res) => {
   let products = await userHelpers.getCartProductList(req.session.user._id)
@@ -358,6 +420,8 @@ router.post('/proceed-page', async (req, res) => {
   })
 })
 
+// <------------------------------------------ POST VERIFY PAYMENT(RAZORPAY) ------------------------------------------->
+
 router.post('/verify-payment', (req, res) => {
   userHelpers.verifyPayment(req.body).then(() => {
     userHelpers.changePaymentStatus(req.body['order[receipt]']).then(() => {
@@ -368,6 +432,8 @@ router.post('/verify-payment', (req, res) => {
   })
 })
 
+// <------------------------------------------ GET WISHLIST ------------------------------------------->
+
 router.get('/wishlist', verifyLogin, async (req, res) => {
   let user = req.session.user
   let products = await userHelpers.getWishlist(user._id)
@@ -375,12 +441,16 @@ router.get('/wishlist', verifyLogin, async (req, res) => {
   res.render('user/wishlist', { user, products, header })
 })
 
+// <------------------------------------------ GET ORDER SUCCESSFULL PAGE ------------------------------------------->
+
 router.get('/order-succesfull', verifyLogin, async (req, res) => {
   let user = req.session.user
   let header = await userHelpers.getHeaderDetails(req.session.user._id)
   let totalh = await userHelpers.getTotalAmount(req.session.user._id)
   res.render('user/order-placed', { user, totalh, header })
 })
+
+// <------------------------------------------ GET ALL ORDERS OF USER ------------------------------------------->
 
 router.get('/get-order', verifyLogin, async (req, res) => {
   let user = req.session.user
@@ -396,6 +466,8 @@ router.get('/get-order', verifyLogin, async (req, res) => {
   res.render('user/order-details', { user, orders, header, pageCount })
 })
 
+// <------------------------------------------ GET VIEW ORDER IN DETAIL ------------------------------------------->
+
 router.get('/view-detail/', verifyLogin, async (req, res) => {
   let products = await userHelpers.getOrderProducts(req.query.id)
   let order = await userHelpers.getOneOrder(req.query.id)
@@ -407,12 +479,13 @@ router.get('/view-detail/', verifyLogin, async (req, res) => {
   let total = await userHelpers.getOrderTotal(req.query.id)
   if (products.disc) {
     total = await products[0].totalAmount
-
   }
   discount = totalh - total
   let header = await userHelpers.getHeaderDetails(req.session.user._id)
   res.render('user/view-order-detail', { products, user, total, header, totalh, discount, order })
 })
+
+// <------------------------------------------ GET CONTACT US PAGE ------------------------------------------->
 
 router.get('/contact-us', async (req, res) => {
   let header = null
@@ -421,6 +494,8 @@ router.get('/contact-us', async (req, res) => {
   }
   res.render('user/contact', { 'user': req.session.user, header })
 })
+
+// <------------------------------------------ GET CATEGORY WISE PRODUCTS ------------------------------------------->
 
 router.get('/get-category-products', async (req, res) => {
   let header = null
@@ -431,24 +506,26 @@ router.get('/get-category-products', async (req, res) => {
   }
   productHelpers.getCategoryProducts(req.query.id).then((product) => {
     productHelpers.getAllCategories().then(async (category) => {
-
       res.render('user/list-products', { product, category, header, 'user': req.session.user, totalh })
     })
   })
 })
 
+// <------------------------------------------ POST ADD NEW ADDRESS------------------------------------------->
+ 
 router.post('/address', (req, res) => {
   userHelpers.addNewAddress(req.body).then((response) => {
     res.redirect('/proceed-page')
   })
 })
 
-router.post('/addressP', (req, res) => {
-  userHelpers.addNewAddress(req.body).then((response) => {
-    res.redirect('/proceed-page')
-  })
-})
+// router.post('/addressP', (req, res) => {
+//   userHelpers.addNewAddress(req.body).then((response) => {
+//     res.redirect('/proceed-page')
+//   })
+// })
 
+// <------------------------------------------ GET PAYMENT FAILED PAGE ------------------------------------------->
 router.get('/payment-failed', async (req, res) => {
   let header = await userHelpers.getHeaderDetails(req.session.user._id)
   if (req.session.user.orderId) {
@@ -458,6 +535,8 @@ router.get('/payment-failed', async (req, res) => {
   res.render('user/paymentfailed', { 'walletErr': req.session.walletErr, 'user': req.session.user, header })
 })
 
+// <------------------------------------------ GET USER PROFILE PAGE ------------------------------------------->
+
 router.get('/userProfile', verifyLogin, async (req, res) => {
   let address = await userHelpers.getAddresses(req.session.user._id)
   let userdata = await userHelpers.userProfile(req.session.user._id)
@@ -465,9 +544,13 @@ router.get('/userProfile', verifyLogin, async (req, res) => {
   res.render('user/user-profile', { address, userdata, 'user': req.session.user, header })
 })
 
+// <------------------------------------------ POST USER PROFILE UPDATIONS------------------------------------------->
+
 router.post('/user-profile', (req, res) => {
   res.redirect('/userProfile')
 })
+
+// <------------------------------------------ POST CANCEL SINGLE PRODUCT BY USER ------------------------------------------->
 
 router.post('/cancel-order', (req, res) => {
   userHelpers.cancelOrder(req.body).then(() => {
@@ -475,19 +558,25 @@ router.post('/cancel-order', (req, res) => {
   })
 })
 
+// <------------------------------------------ RETURN ORDER ------------------------------------------->
+
 router.post('/return-order', (req, res) => {
   userHelpers.returnOrder(req.body).then(() => {
     res.json({ status: true })
   })
 })
 
-router.get('/delete-address/', (req, res) => {
+// <------------------------------------------ GET DELETE ADDRESS ------------------------------------------->
+
+router.get('/delete-address/', verifyLogin, (req, res) => {
   userHelpers.deleteAddress(req.session.user._id, req.query.id).then(() => {
     res.redirect('/userProfile')
   })
 })
 
-router.get('/block/', (req, res) => {
+// <------------------------------------------ GET DEACTIVATE USER ACCOUNT ------------------------------------------->
+
+router.get('/block/', verifyLogin, (req, res) => {
   let userID = req.query.id
   userHelpers.doBlockUser(userID).then(() => {
     req.session.user = null
@@ -495,6 +584,8 @@ router.get('/block/', (req, res) => {
     res.redirect('/')
   })
 })
+
+// <------------------------------------------ POST COUPON DISCOUNT APPLY ------------------------------------------->
 
 router.post('/coupon-discounts', async (req, res) => {
   let beftotal = await userHelpers.getTotalAmount(req.session.user._id)
@@ -506,4 +597,28 @@ router.post('/coupon-discounts', async (req, res) => {
   res.json(coupon)
 })
 
+// <------------------------------------------ POST UPDATE USER ADDRESS ------------------------------------------->
+
+router.post('/updateaddress', (req, res) => {
+  userHelpers.updateAddress(req.body, req.session.user._id).then((data) => {
+    res.json({ status: true })
+  })
+})
+
+// <------------------------------------------ GET PRODUCT SEARCH ------------------------------------------->
+
+router.get('/productsearch', async (req, res) => {
+  let header
+  let user
+  if (req.session.user) {
+    header = await userHelpers.getHeaderDetails(req.session.user._id)
+    user = req.session.user
+  }
+  userHelpers.searchProducts(req.query.key).then((product) => {
+    productHelpers.getAllCategories().then(async (category) => {
+      res.render('user/list-products', { category, product, user, header })
+    })
+    console.log(product, "prosuctsss");
+  })
+})
 module.exports = router;
